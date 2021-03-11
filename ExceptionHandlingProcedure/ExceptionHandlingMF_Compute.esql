@@ -1,0 +1,149 @@
+
+BROKER SCHEMA ExceptionHandlingProcedure
+
+DECLARE soapenv NAMESPACE 'http://schemas.xmlsoap.org/soap/envelope/'; 
+CREATE COMPUTE MODULE ExceptionHandlingMF_Compute
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE Error ROW; -- this row variable can work as a tree so can provide a refrence to it
+		DECLARE errorRef REFERENCE TO Error;
+
+		CALL getException(InputExceptionList, errorRef); -- HENA b call el percedure rl paramters de hayet3emlaha copy f paramters el procedure
+
+		IF (FIELDNAME(InputRoot.[<])= 'XMLNSC') THEN
+			
+			CREATE FIELD OutputRoot.XMLNSC.ErrorDetails;
+			DECLARE ouxmltRef REFERENCE TO OutputRoot.XMLNSC.ErrorDetails;
+			SET ouxmltRef.TimeStamp = CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT 'dd-MM-yyyy HH:mm:ss');
+			SET ouxmltRef.ErrorCode = errorRef.errorCode; -- errorRef.errorCode; de eli rag3ali mn el procedure
+			SET ouxmltRef.ExceptionType = errorRef.exceptionType; 
+			SET ouxmltRef.ErrorMessage = errorRef.errorMessage; 
+			SET ouxmltRef.ErrorLocation = errorRef.errorLocation; 
+			
+			
+		ELSEIF (FIELDNAME(InputRoot.[<])= 'SOAP') THEN
+			CREATE FIELD OutputRoot.SOAP.Body.soapenv:Fault;
+			DECLARE outSOAPRef REFERENCE TO OutputRoot.SOAP.Body.soapenv:Fault;
+
+			SET outSOAPRef.faultcode = 'Server';
+			SET outSOAPRef.faultstring = 'Exception occur while processing';
+			SET outSOAPRef.TimeStamp = CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT 'dd-MM-yyyy HH:mm:ss');
+			SET outSOAPRef.details.ErrorCode = errorRef.errorCode; -- errorRef.errorCode; de eli rag3ali mn el procedure
+			SET outSOAPRef.details.ExceptionType = errorRef.exceptionType; 
+			SET outSOAPRef.details.ErrorMessage = errorRef.errorMessage; 
+			SET outSOAPRef.details.ErrorLocation = errorRef.errorLocation; 
+
+		ELSEIF (CONTAINS(InputRoot.HTTPInputHeader."X-Original-HTTP-Command",'GET')
+			OR FIELDNAME(InputRoot.[<])='JSON') THEN
+	
+			CREATE FIELD OutputRoot.JSON.Data.ErrorDetails;
+			DECLARE outRESTRef REFERENCE TO OutputRoot.JSON.Data.ErrorDetails;
+			SET outRESTRef.TimeStamp = CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT 'dd-MM-yyyy HH:mm:ss');
+			SET outRESTRef.ErrorCode = errorRef.errorCode; -- errorRef.errorCode; de eli rag3ali mn el procedure
+			SET outRESTRef.ExceptionType = errorRef.exceptionType; 
+			SET outRESTRef.ErrorMessage = errorRef.errorMessage; 
+			SET outRESTRef.ErrorLocation = errorRef.errorLocation; 
+		END IF;
+		RETURN TRUE;
+	END;
+	
+	-- Exception Handling Procedure
+
+	CREATE PROCEDURE getException (IN InputExceptionList REFERENCE,IN ErrorRef REFERENCE)
+	BEGIN
+
+		DECLARE inExRef REFERENCE TO InputExceptionList.[1]; --refrence till frist child eli howa RECOVERABLE EXCEPTION
+
+		WHILE ENDSWITH(FIELDNAME(inExRef), 'Exception') DO --hena ba00l tool m fristchild 2a5'ro 'Exception' run code  eli homa RecoverableException,RecoverableException, RecoverableException w lw fel DB hayla2ai DBexception
+
+			SET ErrorRef.errorCode = inExRef.Number; -- DAH ELI HOWA RecoverableException > Number:INTEGER:2230
+			SET ErrorRef.exceptionType = FIELDNAME(inExRef); -- el exception type eli homa el lastchilds RecoverableException, and so
+
+			SET ErrorRef.errorMessage = inExRef.Text; -- kol child gowah text erorr zy Text:CHARACTER:Node throwing exception
+			--gow el child bta3 DATABASEEXCEPTION feh kza INSERT fa ha3mel loop 3alehom
+
+			FOR insetRef AS inExRef.Insert[] DO
+				SET ErrorRef.errorMessage = ErrorRef.errorMessage ||'.  '|| insetRef.Text ||'.  ';
+			END FOR;
+			-- 3andi kaman LABEL Contains My errorLocation Where My error to place
+			-- zy keda Label:CHARACTER:Customer.SOAP.CustomerServiceMF.SOAP Input ma3na keda enii f ''SOAP Input '' 7asal error
+		
+			IF (inExRef.Label<>'') THEN -- If label not blank
+				
+			SET ErrorRef.errorLocation = inExRef.Label;
+				
+			END IF;	
+				MOVE inExRef LASTCHILD;
+		END WHILE;  
+		-- keda an ba3etlo ErrorRef k tree w how 7at 3aleha el label w location w errorcode w exception type
+	END;
+	
+	
+	
+	
+	
+		/* DEL EL EXception list bta3tii
+		ExceptionList
+		RecoverableException -- frist child of ExceptionList
+		File:CHARACTER:F:\ci\slot1\product-build\WMB\src\DataFlowEngine\MessageServices\ImbDataFlowNode.cpp
+		Line:INTEGER:1261
+		Function:CHARACTER:ImbDataFlowNode::createExceptionList
+		Type:CHARACTER:ComIbmSOAPInputNode
+		Name:CHARACTER:Customer/SOAP/CustomerServiceMF#FCMComposite_1_1
+		Label:CHARACTER:Customer.SOAP.CustomerServiceMF.SOAP Input
+		Catalog:CHARACTER:BIPmsgs
+		Severity:INTEGER:3
+		Number:INTEGER:2230
+		Text:CHARACTER:Node throwing exception
+		Insert
+		Type:INTEGER:14
+		Text:CHARACTER:Customer.SOAP.CustomerServiceMF.SOAP Input
+		RecoverableException -- dah last child of RecoverableException eli 2abliha w hakaza
+		File:CHARACTER:F:\ci\slot1\product-build\WMB\src\DataFlowEngine\BasicNodes\ImbRouterNode.cpp
+		Line:INTEGER:315
+		Function:CHARACTER:ImbRouterNode::evaluate
+		Type:CHARACTER:ComIbmRouteToLabelNode
+		Name:CHARACTER:Customer/SOAP/CustomerServiceMF#FCMComposite_1_9
+		Label:CHARACTER:Customer.SOAP.CustomerServiceMF.Route To Label
+		Catalog:CHARACTER:BIPmsgs
+		Severity:INTEGER:3
+		Number:INTEGER:2230
+		Text:CHARACTER:Caught exception and rethrowing
+		Insert
+		Type:INTEGER:14
+		Text:CHARACTER:Customer.SOAP.CustomerServiceMF.Route To Label
+		RecoverableException
+		File:CHARACTER:F:\ci\slot1\product-build\WMB\src\DataFlowEngine\BasicNodes\ImbRouterNode.cpp
+		Line:INTEGER:291
+		Function:CHARACTER:ImbRouterNode::evaluate
+		Type:CHARACTER:ComIbmRouteToLabelNode
+		Name:CHARACTER:Customer/SOAP/CustomerServiceMF#FCMComposite_1_9
+		Label:CHARACTER:Customer.SOAP.CustomerServiceMF.Route To Label
+		Catalog:CHARACTER:BIPmsgs
+		Severity:INTEGER:3
+		Number:INTEGER:4240
+		Text:CHARACTER:Invalid label name
+		Insert
+		Type:INTEGER:5
+		Text:CHARACTER:GetCustomer
+		Insert
+		Type:INTEGER:5
+		Text:CHARACTER:Customer.SOAP.CustomerServiceMF.Route To Label */
+		
+		
+		/* DAH SHAkel el output b3ed m a run el code w ya7sal error fel soap
+		<NS1:Envelope xmlns:NS1="http://schemas.xmlsoap.org/soap/envelope/">
+   <NS1:Body>
+      <NS1:Fault>
+         <faultcode>Server</faultcode>
+         <faultstring>Exception occur while processing</faultstring>
+         <details>
+            <ErrorCode>2322</ErrorCode>
+            <ExceptionType>DatabaseException</ExceptionType>
+            <ErrorMessage>Child SQL exception.  IM002.  .  0.  .  [Microsoft][ODBC Driver Manager] Data source name not found and no default driver specified.</ErrorMessage>
+            <ErrorLocation>Customer.SOAP.CustomerServiceMF.GetCustomer_SubFlow.GetCustomer</ErrorLocation>
+         </details>
+      </NS1:Fault>
+   </NS1:Body>
+</NS1:Envelope> */
+	END MODULE;
